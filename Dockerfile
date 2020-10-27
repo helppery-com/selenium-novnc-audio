@@ -1,4 +1,4 @@
-FROM selenium/standalone-firefox-debug:3.141.59-20200525
+FROM nurdism/neko:firefox
 
 USER seluser
 
@@ -14,16 +14,7 @@ RUN cp $HOME/noVNC/vnc.html $HOME/noVNC/index.html
 # websockify
 RUN git clone https://github.com/kanaka/websockify $HOME/noVNC/utils/websockify
 
-# Audio server
-RUN pip3 install pyaudio flask
-COPY audioserver $HOME/audioserver
-RUN pip3 install -r $HOME/audioserver/requirements.txt
-
 # RUN NoVNC
 COPY supervisord.conf /etc/supervisor/conf.d/zzz_hmihy.conf
-#COPY start-vnc.sh /opt/bin/
-COPY fluxbox.init /usr/share/fluxbox/init
-
-#RUN $HOME/noVNC/utils/launch.sh --vnc localhost:5900 &
 
 EXPOSE 6080 4444 5900 5000
