@@ -1,47 +1,16 @@
 from flask import Flask, Response,render_template
-from threading import Thread
 import pyaudio, time, uuid
 
 
 app = Flask(__name__)
 
 FORMAT = pyaudio.paInt16
-CHANNELS = 2
+CHANNELS = 1
 RATE = 44100
-CHUNK = 2048
+CHUNK = 4096
 BITS_PER_SAMPLE = 16
-
-CLIENTS = {}
-
-def listen():
-  global DATA
-  # define callback (2)
-  def callback(in_data, frame_count, time_info, status):
-      DATA = in_data
-      return (DATA, pyaudio.paContinue)
-    
-  pya = pyaudio.PyAudio()
-  stream = None
-  def open():
-    print("Open audio stream")
-    return pya.open(format=FORMAT, 
-                        channels=CHANNELS,
-                        rate=RATE, 
-                        input=True,
-                        # stream_callback=callback,
-                        frames_per_buffer=CHUNK)
-  prev_data = None
-  print("Start stream")
-  while True:
-    if not stream or not stream.is_active():
-      stream = open()
-    data = stream.read(CHUNK, exception_on_overflow = False)
-    if prev_data != data:
-      print("New data read")
-    prev_data = data
-    for k in CLIENTS:
-      CLIENTS[k] = data
-    time.sleep(1)
+DATA = None
+TIME_INFO = None
 
 def genHeader():
     datasize = 2000*10**6
@@ -60,27 +29,44 @@ def genHeader():
     o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
     return o
 
-HEADER = genHeader()
+def callback(in_data, frame_count, time_info, status):
+    global DATA
+    global TIME_INFO
+    DATA = in_data
+    TIME_INFO = time_info
+    return (None, pyaudio.paContinue)
 
-def read_data(uid):
-  while not CLIENTS[uid]:
-    time.sleep(1)
-  return CLIENTS[uid]
+def listen():
+  audio = pyaudio.PyAudio()
+  stream = audio.open(format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            input=True,
+            frames_per_buffer=CHUNK,
+            stream_callback=callback)
+  print("Stream started")
+  return stream
 
 @app.route('/audio')
 def audio():
-    uid = str(uuid.uuid1())
-    CLIENTS[uid] = None
+    header = genHeader()
     # start Recording
     def sound():
-        print("%s start stream with %s" % (uid, HEADER))
-        yield HEADER + b'0'
-        while True:
-            yield read_data(uid)
-        print("%s disconnected" % uid)
-        del CLIENTS[uid]
+        try:
+          print("Start audio stream")
+          tinfo = None
+          yield header + b'0'
+          while True:
+            yield DATA
+            tinfo = TIME_INFO
+            time.sleep(0)
+        finally:
+          print("End audio stream")
+
     return Response(sound(), headers={"Content-Type": "audio/x-wav"})
 
 if __name__ == "__main__":
-    Thread(target=listen).start()
-    app.run(host='0.0.0.0', debug=True, threaded=True,port=5000)
+  stream = listen()
+  app.run(host='0.0.0.0', debug=True, threaded=True,port=5000)
+  print("Cleaning....")
+  stream.close()
